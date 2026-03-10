@@ -1,7 +1,7 @@
 import { Stock, Quote, WatchlistItem, Alert, UserSettings } from '@/types';
 
 // 后端API代理地址 - 使用localtunnel暴露的本地服务
-const API_PROXY = 'https://five-wombats-stay.loca.lt';
+const API_PROXY = 'https://yummy-seals-heal.loca.lt';
 
 // 股票代码映射
 const getSecId = (symbol: string): string => {
