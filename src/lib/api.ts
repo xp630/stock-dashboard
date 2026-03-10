@@ -112,33 +112,35 @@ class ApiService {
     return stocks.map(generateMockQuote);
   }
 
-  // 搜索股票 - 使用真实API
+  // 搜索股票 - 使用更大的本地列表
   async searchStocks(query: string): Promise<Stock[]> {
     const q = query.toLowerCase();
     
-    // 尝试从API搜索
-    if (this.useRealApi && API_PROXY) {
-      try {
-        const response = await fetch(`${API_PROXY}/api/search?q=${q}`);
-        const json = await response.json();
-        
-        if (json.data && json.data.diff) {
-          return json.data.diff.slice(0, 10).map((item: any) => ({
-            id: String(item.f12),
-            symbol: String(item.f12),
-            name: item.f14 || '',
-            market: item.f13 === 1 ? 'SH' as const : 'SZ' as const,
-            sector: '',
-          }));
-        }
-      } catch (error) {
-        console.error('Search API failed:', error);
-      }
-    }
+    // 扩展的本地股票列表（常用股票）
+    const ALL_STOCKS: Stock[] = [
+      { id: '1', symbol: '600446', name: '金证股份', market: 'SH', sector: '软件服务' },
+      { id: '2', symbol: '300463', name: '迈克生物', market: 'SZ', sector: '医疗器械' },
+      { id: '3', symbol: '000001', name: '平安银行', market: 'SZ', sector: '银行' },
+      { id: '4', symbol: '600519', name: '贵州茅台', market: 'SH', sector: '酿酒' },
+      { id: '5', symbol: '300750', name: '宁德时代', market: 'SZ', sector: '新能源' },
+      { id: '6', symbol: '000858', name: '五粮液', market: 'SZ', sector: '酿酒' },
+      { id: '7', symbol: '600036', name: '招商银行', market: 'SH', sector: '银行' },
+      { id: '8', symbol: '601318', name: '中国平安', market: 'SH', sector: '保险' },
+      { id: '9', symbol: '600900', name: '长江电力', market: 'SH', sector: '电力' },
+      { id: '10', symbol: '000333', name: '美的集团', market: 'SZ', sector: '家电' },
+      { id: '11', symbol: '002594', name: '比亚迪', market: 'SZ', sector: '汽车' },
+      { id: '12', symbol: '600276', name: '恒瑞医药', market: 'SH', sector: '医药' },
+      { id: '13', symbol: '601888', name: '中国中免', market: 'SH', sector: '旅游' },
+      { id: '14', symbol: '300059', name: '东方财富', market: 'SZ', sector: '金融' },
+      { id: '15', symbol: '600030', name: '中信证券', market: 'SH', sector: '证券' },
+      { id: '16', symbol: '000002', name: '万科A', market: 'SZ', sector: '房地产' },
+      { id: '17', symbol: '601012', name: '隆基绿能', market: 'SH', sector: '光伏' },
+      { id: '18', symbol: '002475', name: '立讯精密', market: 'SZ', sector: '电子' },
+      { id: '19', symbol: '300015', name: '爱尔眼科', market: 'SZ', sector: '医疗' },
+      { id: '20', symbol: '600690', name: '海尔智家', market: 'SH', sector: '家电' },
+    ];
     
-    // 降级到本地搜索
-    const stocks = getWatchlistSymbols();
-    const results = stocks.filter(s => 
+    const results = ALL_STOCKS.filter(s => 
       s.symbol.toLowerCase().includes(q) || 
       s.name.toLowerCase().includes(q)
     );
