@@ -16,33 +16,6 @@ const getSecId = (symbol) => {
   return `1.${symbol}`;
 };
 
-// 获取全部A股列表缓存
-let allStocksCache = [];
-let cacheTime = 0;
-
-async function getAllStocks() {
-  const now = Date.now();
-  if (allStocksCache.length > 0 && now - cacheTime < 5 * 60 * 1000) {
-    return allStocksCache;
-  }
-  
-  try {
-    const url = `${EF_BASE}/ulist.np/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f13,f14,f3`;
-    const response = await fetch(url);
-    const data = await response.json();
-    
-    if (data.data && data.data.diff) {
-      allStocksCache = data.data.diff;
-      cacheTime = now;
-      console.log(`Fetched ${allStocksCache.length} stocks`);
-    }
-  } catch (error) {
-    console.error('Error fetching stocks:', error);
-  }
-  
-  return allStocksCache;
-}
-
 app.get('/api/quotes', async (req, res) => {
   try {
     const { symbols } = req.query;
@@ -97,7 +70,7 @@ app.get('/api/index', async (req, res) => {
   }
 });
 
-// 搜索股票 - 使用本地缓存过滤
+// 搜索股票 - 实时获取全部A股
 app.get('/api/search', async (req, res) => {
   try {
     const { q } = req.query;
@@ -105,29 +78,26 @@ app.get('/api/search', async (req, res) => {
       return res.json({ data: { diff: [] } });
     }
 
-    // 先获取全部股票列表
-    const allStocks = await getAllStocks();
+    // 获取沪深A股列表
+    const url = `${EF_BASE}/ulist.np/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f13,f14,f3`;
     
-    if (!allStocks || allStocks.length === 0) {
-      return res.json({ data: { diff: [] } });
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.data && data.data.diff) {
+      const qLower = q.toLowerCase();
+      const filtered = data.data.diff.filter(item => 
+        String(item.f12).includes(q) || 
+        (item.f14 && item.f14.toLowerCase().includes(qLower))
+      );
+      return res.json({ data: { diff: filtered.slice(0, 20) } });
     }
     
-    const qLower = q.toLowerCase();
-    const filtered = allStocks.filter(item => 
-      String(item.f12).includes(q) || 
-      (item.f14 && item.f14.toLowerCase().includes(qLower))
-    );
-    
-    res.json({ data: { diff: filtered.slice(0, 20) } });
+    res.json({ data: { diff: [] } });
   } catch (error) {
     console.error('Error searching:', error);
     res.status(500).json({ error: 'Failed to search' });
   }
-});
-
-// 预加载股票列表
-getAllStocks().then(() => {
-  console.log('Stock list preloaded');
 });
 
 app.listen(PORT, () => {
