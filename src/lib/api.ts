@@ -1,8 +1,7 @@
 import { Stock, Quote, WatchlistItem, Alert, UserSettings } from '@/types';
 
-// 后端API代理地址 - 暂时留空使用模拟数据
-// 如需真实数据，可部署后端服务后填入地址
-const API_PROXY = '';
+// 后端API代理地址 - Render部署
+const API_PROXY = 'https://stock-dashboard-bcyh.onrender.com';
 
 // 股票代码映射
 const getSecId = (symbol: string): string => {
