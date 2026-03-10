@@ -1,14 +1,12 @@
-import { Stock, Quote, WatchlistItem, Alert, Position, UserSettings } from '@/types';
+import { Stock, Quote, WatchlistItem, Alert, UserSettings } from '@/types';
 
-// 使用CORS代理来访问东方财富API
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-const EF_API_BASE = 'https://push2.eastmoney.com/api/qt';
+// 后端API代理地址 - 需要部署后端服务
+const API_PROXY = ''; // 留空则使用模拟数据，填入地址则使用真实API
 
 // 股票代码映射
 const getSecId = (symbol: string): string => {
   if (symbol.startsWith('6')) return `1.${symbol}`;
   if (symbol.startsWith('0') || symbol.startsWith('3')) return `0.${symbol}`;
-  if (symbol.startsWith('8') || symbol.startsWith('4')) return `0.${symbol}`;
   return `1.${symbol}`;
 };
 
@@ -38,12 +36,13 @@ const getWatchlistSymbols = (): Stock[] => {
   return DEFAULT_WATCHLIST;
 };
 
-// 生成Mock数据
+// 生成模拟数据（基于真实价格范围）
 const generateMockQuote = (stock: Stock): Quote => {
-  const basePrice = stock.symbol === '600519' ? 1400 : 
-                    stock.symbol === '300750' ? 375 :
+  const basePrice = stock.symbol === '600519' ? 1403 : 
+                    stock.symbol === '300750' ? 374 :
                     stock.symbol === '000001' ? 12 :
                     stock.symbol === '600446' ? 14.5 :
+                    stock.symbol === '300463' ? 11.5 :
                     Math.random() * 50 + 10;
   const change = (Math.random() - 0.5) * basePrice * 0.05;
   const changePercent = (change / basePrice) * 100;
@@ -67,60 +66,50 @@ const generateMockQuote = (stock: Stock): Quote => {
 };
 
 class ApiService {
-  // 使用JSONP方式获取数据
-  async fetchQuotesJSONP(stocks: Stock[]): Promise<Quote[]> {
-    if (stocks.length === 0) return [];
+  private useRealApi: boolean = false;
 
-    const secids = stocks.map(s => getSecId(s.symbol)).join(',');
-    const url = `${EF_API_BASE}/ulist.np/get?pn=1&pz=${stocks.length}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&secids=${secids}&fields=f1,f2,f3,f4,f12,f13,f14,f21,f22,f23`;
-    
-    return new Promise((resolve) => {
-      const callbackName = 'jsonp_callback_' + Date.now();
-      
-      // 创建JSONP script标签
-      const script = document.createElement('script');
-      // 尝试使用另一个不需要认证的API
-      const jsonpUrl = `https://push2ex.eastmoney.com/getTopicZDFenBu?ut=7eea3edcaed734bea9cbfc24409ed989&dession=ALL&mession=ALL&fenbu=1`;
-      
-      // 使用fetch API + allorigins代理
-      fetch(CORS_PROXY + encodeURIComponent(url))
-        .then(response => {
-          if (!response.ok) {
-            throw new Error('Network response was not ok');
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data.data && data.data.diff) {
-            const quotes = data.data.diff.map((item: any) => ({
-              id: `q-${item.f12}`,
-              stockId: String(item.f12),
-              symbol: String(item.f12),
-              name: item.f14 || '',
-              price: item.f2 === '-' || item.f2 === '' ? 0 : Number(item.f2),
-              change: item.f4 === '-' || item.f4 === '' ? 0 : Number(item.f4),
-              changePercent: item.f3 === '-' || item.f3 === '' ? 0 : Number(item.f3),
-              open: 0,
-              high: 0,
-              low: 0,
-              volume: item.f21 || 0,
-              amount: 0,
-              turnover: item.f23 === '-' || item.f23 === '' ? 0 : Number(item.f23),
-              timestamp: new Date(),
-            }));
-            console.log('API Success, quotes:', quotes);
-            resolve(quotes);
-          } else {
-            console.log('No data from API, using mock');
-            resolve(stocks.map(generateMockQuote));
-          }
-        })
-        .catch(error => {
-          console.error('Fetch failed:', error);
-          console.log('Using mock data');
-          resolve(stocks.map(generateMockQuote));
-        });
-    });
+  constructor() {
+    // 如果配置了API代理地址，则使用真实API
+    if (typeof API_PROXY === 'string' && API_PROXY.trim() !== '') {
+      this.useRealApi = true;
+    }
+  }
+
+  // 从后端获取行情数据
+  async fetchQuotesFromProxy(stocks: Stock[]): Promise<Quote[]> {
+    if (!this.useRealApi || !API_PROXY) {
+      return stocks.map(generateMockQuote);
+    }
+
+    try {
+      const symbols = stocks.map(s => s.symbol).join(',');
+      const response = await fetch(`${API_PROXY}/api/quotes?symbols=${symbols}`);
+      const json = await response.json();
+
+      if (json.data && json.data.diff) {
+        return json.data.diff.map((item: any) => ({
+          id: `q-${item.f12}`,
+          stockId: String(item.f12),
+          symbol: String(item.f12),
+          name: item.f14 || '',
+          price: item.f2 === '-' || item.f2 === '' ? 0 : Number(item.f2),
+          change: item.f4 === '-' || item.f4 === '' ? 0 : Number(item.f4),
+          changePercent: item.f3 === '-' || item.f3 === '' ? 0 : Number(item.f3),
+          open: 0,
+          high: 0,
+          low: 0,
+          volume: item.f21 || 0,
+          amount: 0,
+          turnover: item.f23 === '-' || item.f23 === '' ? 0 : Number(item.f23),
+          timestamp: new Date(),
+        }));
+      }
+    } catch (error) {
+      console.error('Proxy fetch failed:', error);
+    }
+
+    // 如果失败，使用模拟数据
+    return stocks.map(generateMockQuote);
   }
 
   // 搜索股票
@@ -141,7 +130,6 @@ class ApiService {
     return stocks.find(s => s.id === id || s.symbol === id);
   }
 
-  // 使用模拟数据（因为CORS问题暂时无法解决）
   async getQuote(stockId: string): Promise<Quote | undefined> {
     const stocks = getWatchlistSymbols();
     const stock = stocks.find(s => s.symbol === stockId || s.id === stockId);
@@ -156,8 +144,7 @@ class ApiService {
       return all.find(s => s.symbol === id || s.id === id) || { symbol: id, name: id, id, market: 'SH' as const } as Stock;
     }).filter(s => s.symbol);
     
-    // 直接使用模拟数据，确保稳定运行
-    return stocks.map(generateMockQuote);
+    return this.fetchQuotesFromProxy(stocks);
   }
 
   // Watchlist APIs
