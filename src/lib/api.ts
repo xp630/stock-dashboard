@@ -112,11 +112,32 @@ class ApiService {
     return stocks.map(generateMockQuote);
   }
 
-  // 搜索股票
+  // 搜索股票 - 使用真实API
   async searchStocks(query: string): Promise<Stock[]> {
     const q = query.toLowerCase();
-    const stocks = getWatchlistSymbols();
     
+    // 尝试从API搜索
+    if (this.useRealApi && API_PROXY) {
+      try {
+        const response = await fetch(`${API_PROXY}/api/search?q=${q}`);
+        const json = await response.json();
+        
+        if (json.data && json.data.diff) {
+          return json.data.diff.slice(0, 10).map((item: any) => ({
+            id: String(item.f12),
+            symbol: String(item.f12),
+            name: item.f14 || '',
+            market: item.f13 === 1 ? 'SH' as const : 'SZ' as const,
+            sector: '',
+          }));
+        }
+      } catch (error) {
+        console.error('Search API failed:', error);
+      }
+    }
+    
+    // 降级到本地搜索
+    const stocks = getWatchlistSymbols();
     const results = stocks.filter(s => 
       s.symbol.toLowerCase().includes(q) || 
       s.name.toLowerCase().includes(q)
