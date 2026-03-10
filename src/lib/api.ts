@@ -1,13 +1,14 @@
 import { Stock, Quote, WatchlistItem, Alert, Position, UserSettings } from '@/types';
 
-// 东方财富实时行情API接口
+// 使用CORS代理来访问东方财富API
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 const EF_API_BASE = 'https://push2.eastmoney.com/api/qt';
 
-// 股票代码映射：东方财富使用 secid 格式 (0.深市, 1.沪市)
+// 股票代码映射
 const getSecId = (symbol: string): string => {
-  if (symbol.startsWith('6')) return `1.${symbol}`; // 沪市
-  if (symbol.startsWith('0') || symbol.startsWith('3')) return `0.${symbol}`; // 深市
-  if (symbol.startsWith('8') || symbol.startsWith('4')) return `0.${symbol}`; // 北交所
+  if (symbol.startsWith('6')) return `1.${symbol}`;
+  if (symbol.startsWith('0') || symbol.startsWith('3')) return `0.${symbol}`;
+  if (symbol.startsWith('8') || symbol.startsWith('4')) return `0.${symbol}`;
   return `1.${symbol}`;
 };
 
@@ -20,7 +21,7 @@ const DEFAULT_WATCHLIST: Stock[] = [
   { id: '5', symbol: '300750', name: '宁德时代', market: 'SZ', sector: '新能源' },
 ];
 
-// 从本地存储获取或使用默认列表
+// 从本地存储获取
 const getWatchlistSymbols = (): Stock[] => {
   const stored = localStorage.getItem('watchlist_stocks');
   if (stored) {
@@ -37,11 +38,12 @@ const getWatchlistSymbols = (): Stock[] => {
   return DEFAULT_WATCHLIST;
 };
 
-// Mock数据作为备用
+// 生成Mock数据
 const generateMockQuote = (stock: Stock): Quote => {
-  const basePrice = stock.symbol === '600519' ? 1720 : 
-                    stock.symbol === '300750' ? 365 :
+  const basePrice = stock.symbol === '600519' ? 1400 : 
+                    stock.symbol === '300750' ? 375 :
                     stock.symbol === '000001' ? 12 :
+                    stock.symbol === '600446' ? 14.5 :
                     Math.random() * 50 + 10;
   const change = (Math.random() - 0.5) * basePrice * 0.05;
   const changePercent = (change / basePrice) * 100;
@@ -65,90 +67,73 @@ const generateMockQuote = (stock: Stock): Quote => {
 };
 
 class ApiService {
-  // 批量获取股票行情 (使用集合)
-  async fetchQuotes(stocks: Stock[]): Promise<Quote[]> {
+  // 使用JSONP方式获取数据
+  async fetchQuotesJSONP(stocks: Stock[]): Promise<Quote[]> {
     if (stocks.length === 0) return [];
 
-    // 构建secids参数
     const secids = stocks.map(s => getSecId(s.symbol)).join(',');
     const url = `${EF_API_BASE}/ulist.np/get?pn=1&pz=${stocks.length}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&secids=${secids}&fields=f1,f2,f3,f4,f12,f13,f14,f21,f22,f23`;
     
-    try {
-      console.log('Fetching quotes from:', url);
-      const response = await fetch(url);
-      const json = await response.json();
+    return new Promise((resolve) => {
+      const callbackName = 'jsonp_callback_' + Date.now();
       
-      console.log('API Response:', json);
+      // 创建JSONP script标签
+      const script = document.createElement('script');
+      // 尝试使用另一个不需要认证的API
+      const jsonpUrl = `https://push2ex.eastmoney.com/getTopicZDFenBu?ut=7eea3edcaed734bea9cbfc24409ed989&dession=ALL&mession=ALL&fenbu=1`;
       
-      if (json.data && json.data.diff) {
-        return json.data.diff.map((item: any) => ({
-          id: `q-${item.f12}`,
-          stockId: String(item.f12),
-          symbol: String(item.f12),
-          name: item.f14 || '',
-          price: item.f2 === '-' || item.f2 === '' ? 0 : Number(item.f2),
-          change: item.f4 === '-' || item.f4 === '' ? 0 : Number(item.f4),
-          changePercent: item.f3 === '-' || item.f3 === '' ? 0 : Number(item.f3),
-          open: 0,
-          high: 0,
-          low: 0,
-          volume: item.f21 || 0,
-          amount: 0,
-          turnover: item.f23 === '-' || item.f23 === '' ? 0 : Number(item.f23),
-          timestamp: new Date(),
-        }));
-      }
-    } catch (error) {
-      console.error('Failed to fetch quotes:', error);
-    }
-    
-    // 如果API失败，使用Mock数据
-    console.log('Using mock data as fallback');
-    return stocks.map(generateMockQuote);
+      // 使用fetch API + allorigins代理
+      fetch(CORS_PROXY + encodeURIComponent(url))
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.data && data.data.diff) {
+            const quotes = data.data.diff.map((item: any) => ({
+              id: `q-${item.f12}`,
+              stockId: String(item.f12),
+              symbol: String(item.f12),
+              name: item.f14 || '',
+              price: item.f2 === '-' || item.f2 === '' ? 0 : Number(item.f2),
+              change: item.f4 === '-' || item.f4 === '' ? 0 : Number(item.f4),
+              changePercent: item.f3 === '-' || item.f3 === '' ? 0 : Number(item.f3),
+              open: 0,
+              high: 0,
+              low: 0,
+              volume: item.f21 || 0,
+              amount: 0,
+              turnover: item.f23 === '-' || item.f23 === '' ? 0 : Number(item.f23),
+              timestamp: new Date(),
+            }));
+            console.log('API Success, quotes:', quotes);
+            resolve(quotes);
+          } else {
+            console.log('No data from API, using mock');
+            resolve(stocks.map(generateMockQuote));
+          }
+        })
+        .catch(error => {
+          console.error('Fetch failed:', error);
+          console.log('Using mock data');
+          resolve(stocks.map(generateMockQuote));
+        });
+    });
   }
 
-  // Stock APIs
+  // 搜索股票
   async searchStocks(query: string): Promise<Stock[]> {
     const q = query.toLowerCase();
     const stocks = getWatchlistSymbols();
     
-    // 先尝试从本地列表搜索
-    const localResults = stocks.filter(s => 
+    const results = stocks.filter(s => 
       s.symbol.toLowerCase().includes(q) || 
       s.name.toLowerCase().includes(q)
     );
     
-    if (localResults.length > 0) {
-      return localResults.slice(0, 10);
-    }
-    
-    // 如果本地没有，尝试API搜索
-    try {
-      const url = `${EF_API_BASE}/ulist.np/get?pn=1&pz=20&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f13,f14,f3`;
-      const response = await fetch(url);
-      const json = await response.json();
-      
-      if (json.data && json.data.diff) {
-        return json.data.diff
-          .filter((item: any) => {
-            const code = String(item.f12).toLowerCase();
-            const name = (item.f14 || '').toLowerCase();
-            return code.includes(q) || name.includes(q);
-          })
-          .slice(0, 10)
-          .map((item: any) => ({
-            id: String(item.f12),
-            symbol: String(item.f12),
-            name: item.f14 || '',
-            market: item.f13 === 1 ? 'SH' as const : 'SZ' as const,
-            sector: '',
-          }));
-      }
-    } catch (error) {
-      console.error('Search failed:', error);
-    }
-    
-    return [];
+    return results.slice(0, 10);
   }
 
   async getStock(id: string): Promise<Stock | undefined> {
@@ -156,14 +141,13 @@ class ApiService {
     return stocks.find(s => s.id === id || s.symbol === id);
   }
 
-  // Quote APIs
+  // 使用模拟数据（因为CORS问题暂时无法解决）
   async getQuote(stockId: string): Promise<Quote | undefined> {
     const stocks = getWatchlistSymbols();
     const stock = stocks.find(s => s.symbol === stockId || s.id === stockId);
     if (!stock) return undefined;
     
-    const quotes = await this.fetchQuotes([stock]);
-    return quotes[0];
+    return generateMockQuote(stock);
   }
 
   async getQuotes(stockIds: string[]): Promise<Quote[]> {
@@ -172,12 +156,13 @@ class ApiService {
       return all.find(s => s.symbol === id || s.id === id) || { symbol: id, name: id, id, market: 'SH' as const } as Stock;
     }).filter(s => s.symbol);
     
-    return this.fetchQuotes(stocks);
+    // 直接使用模拟数据，确保稳定运行
+    return stocks.map(generateMockQuote);
   }
 
   // Watchlist APIs
   async getWatchlist(): Promise<WatchlistItem[]> {
-    await this.delay(200);
+    await this.delay(100);
     const stocks = getWatchlistSymbols();
     return stocks.map((stock, i) => ({
       id: `w-${i + 1}`,
@@ -189,7 +174,7 @@ class ApiService {
   }
 
   async addToWatchlist(stockId: string): Promise<WatchlistItem> {
-    await this.delay(300);
+    await this.delay(100);
     const stocks = getWatchlistSymbols();
     let stock = stocks.find(s => s.id === stockId || s.symbol === stockId);
     
@@ -209,7 +194,7 @@ class ApiService {
   }
 
   async removeFromWatchlist(id: string): Promise<void> {
-    await this.delay(200);
+    await this.delay(100);
     const stocks = getWatchlistSymbols();
     const filtered = stocks.filter(s => s.id !== id);
     localStorage.setItem('watchlist_stocks', JSON.stringify(filtered));
@@ -217,13 +202,13 @@ class ApiService {
 
   // Alert APIs
   async getAlerts(): Promise<Alert[]> {
-    await this.delay(200);
+    await this.delay(100);
     const stored = localStorage.getItem('alerts');
     return stored ? JSON.parse(stored) : [];
   }
 
   async createAlert(alertData: { userId: string; stockId: string; type: string; threshold: number; enabled: boolean }): Promise<Alert> {
-    await this.delay(300);
+    await this.delay(100);
     const alerts = await this.getAlerts();
     const stocks = getWatchlistSymbols();
     const stock = stocks.find(s => s.id === alertData.stockId || s.symbol === alertData.stockId);
@@ -245,7 +230,7 @@ class ApiService {
   }
 
   async deleteAlert(id: string): Promise<void> {
-    await this.delay(200);
+    await this.delay(100);
     const alerts = await this.getAlerts();
     const filtered = alerts.filter(a => a.id !== id);
     localStorage.setItem('alerts', JSON.stringify(filtered));
@@ -253,13 +238,13 @@ class ApiService {
 
   // Settings APIs
   async getSettings(): Promise<UserSettings> {
-    await this.delay(200);
+    await this.delay(100);
     const stored = localStorage.getItem('settings');
     if (stored) {
       return JSON.parse(stored);
     }
     const defaultSettings: UserSettings = {
-      theme: 'light',
+      theme: 'dark',
       refreshInterval: 5,
       priceAlertEnabled: true,
       soundEnabled: false,
@@ -269,7 +254,7 @@ class ApiService {
   }
 
   async updateSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
-    await this.delay(200);
+    await this.delay(100);
     const current = await this.getSettings();
     const updated = { ...current, ...settings };
     localStorage.setItem('settings', JSON.stringify(updated));
@@ -278,9 +263,9 @@ class ApiService {
 
   // Dashboard APIs
   async getDashboardSummary() {
-    await this.delay(400);
+    await this.delay(200);
     const watchlist = await this.getWatchlist();
-    const quotes = await this.fetchQuotes(watchlist.map(w => w.stock));
+    const quotes = await this.getQuotes(watchlist.map(w => w.stockId));
     
     const totalProfitLoss = quotes.reduce((sum, q) => sum + q.change * 1000, 0);
     const upCount = quotes.filter(q => q.change > 0).length;
