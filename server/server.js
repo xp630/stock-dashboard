@@ -7,7 +7,6 @@ const PORT = process.env.PORT || 3000;
 
 const EF_BASE = 'https://push2.eastmoney.com/api/qt';
 
-// 允许所有来源
 app.use(cors());
 app.use(express.json());
 
@@ -17,19 +16,17 @@ const getSecId = (symbol) => {
   return `1.${symbol}`;
 };
 
-// 获取所有A股列表（分页获取）
-let allStocksCache: any[] = [];
+// 获取全部A股列表缓存
+let allStocksCache = [];
 let cacheTime = 0;
 
 async function getAllStocks() {
   const now = Date.now();
-  // 缓存5分钟
   if (allStocksCache.length > 0 && now - cacheTime < 5 * 60 * 1000) {
     return allStocksCache;
   }
   
   try {
-    // 获取沪深A股列表
     const url = `${EF_BASE}/ulist.np/get?pn=1&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f13,f14,f3`;
     const response = await fetch(url);
     const data = await response.json();
